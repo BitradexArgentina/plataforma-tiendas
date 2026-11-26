@@ -1,0 +1,24 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Panel maestro</title><link rel="stylesheet" href="/app.css"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script src="/config.js"></script></head><body><div class="w" id="r">Cargando…</div>
+<script>
+const sb=supabase.createClient(CFG.URL,CFG.KEY),$=s=>document.querySelector(s),R=h=>$("#r").innerHTML=h,
+e=s=>String(s??"").replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
+let PL=[];
+function login(m){R(`<div style="max-width:340px;margin:40px auto"><h2>Panel maestro</h2><input id=em type=email placeholder=Email><input id=pw type=password placeholder=Contraseña><button onclick="go()">Entrar</button><p>${m||""}</p></div>`)}
+async function go(){const{error}=await sb.auth.signInWithPassword({email:$("#em").value.trim(),password:$("#pw").value});error?login("Datos incorrectos"):boot()}
+const out=async()=>{await sb.auth.signOut();location.reload()};
+async function boot(){const{data:{session}}=await sb.auth.getSession();if(!session)return login();
+const{data:pf}=await sb.from("profiles").select("role").eq("id",session.user.id).maybeSingle();
+if(pf?.role!="master"){await sb.auth.signOut();return login("Esta cuenta no es administradora")}
+const[a,b]=await Promise.all([sb.from("plans").select("*").order("max_products",{nullsFirst:false}),sb.from("stores").select("*,profiles(email)").order("created_at",{ascending:false})]);
+PL=a.data||[];const st=b.data||[],po=s=>PL.map(p=>`<option value=${p.id} ${p.id==s?"selected":""}>${e(p.name)}</option>`).join("");
+R(`<div class=t><b style="flex:1;font-size:20px">Panel maestro</b><button class=b2 onclick=out()>Salir</button></div>
+<h3>Nueva tienda</h3><div style="max-width:420px">Dirección (ej: modaluna → /tienda/modaluna)<input id=sl>Nombre de la tienda<input id=nm>Mail del cliente (ya creado en Supabase > Authentication)<input id=oe type=email>Plan<select id=pl>${po()}</select>Vence (opcional)<input id=ex type=date><button onclick=mk()>Crear tienda</button></div>
+<h3>Tiendas (${st.length})</h3><div class=sc><table><tr><th>Tienda<th>Cliente<th>Plan<th>Vence<th>Estado<th></tr>${st.map(s=>`<tr><td><a target=_blank href="/tienda.html?t=${e(s.slug)}">${e(s.name)}</a><br><small>${e(s.slug)}</small><td>${e(s.profiles?.email||"-")}<td><select onchange="upd('${s.id}',{plan_id:this.value})">${po(s.plan_id)}</select><td><input type=date value="${s.expires_at||""}" onchange="upd('${s.id}',{expires_at:this.value||null})"><td><button class="${s.status=="active"?"":"r"}" onclick="upd('${s.id}',{status:'${s.status=="active"?"suspended":"active"}'})">${s.status=="active"?"Activa":"Suspendida"}</button><td><a class=b href="/admin.html?store=${s.id}">Editar</a> <button class=r onclick="del('${s.id}')">Eliminar</button></tr>`).join("")}</table></div>`)}
+async function upd(id,o){const{error}=await sb.from("stores").update(o).eq("id",id);error?alert(error.message):boot()}
+async function del(id){if(!confirm("¿Eliminar la tienda y TODOS sus productos? No se puede deshacer."))return;const{error}=await sb.from("stores").delete().eq("id",id);error?alert(error.message):boot()}
+async function mk(){const em=$("#oe").value.trim().toLowerCase(),{data:o}=await sb.from("profiles").select("id").eq("email",em).maybeSingle();
+if(!o)return alert("Ese mail no existe. Primero creá el usuario en Supabase > Authentication > Users.");
+const{error}=await sb.from("stores").insert({slug:$("#sl").value.trim().toLowerCase(),name:$("#nm").value.trim(),owner_id:o.id,plan_id:$("#pl").value,expires_at:$("#ex").value||null});
+error?alert(error.message.includes("slug")?"Dirección inválida o repetida (usá minúsculas, números y guiones, mínimo 3 letras)":error.message):boot()}
+boot();
+</script></body></html>
